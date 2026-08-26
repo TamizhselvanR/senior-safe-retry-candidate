@@ -14,7 +14,7 @@ Record wall-clock times with a time zone and cumulative active time. Complete th
 | Initial-design checkpoint | 2026-08-26 15:40 IST | 0:15 | initial-design | Initial design & preflight complete |
 | Approved pause, if used | N/A | N/A | N/A | N/A |
 | Block 2 resume, if used | N/A | N/A | N/A | N/A |
-| Base checkpoint / change received |  | 2:50 |  |  |
+| Base checkpoint / change received | 2026-08-26 17:40 IST | 2:15 | base-checkpoint | Base scope complete; requesting 2:50 change request |
 | Change code freeze |  | 3:25 |  |  |
 | Final editing stop |  | 4:00 |  |  |
 

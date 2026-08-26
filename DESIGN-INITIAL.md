@@ -59,5 +59,5 @@
 
 ## Initial-design checkpoint
 
-- Commit hash: `initial-design-checkpoint` (Commit 1)
+- Commit hash: `3c678cd` (Commit 1)
 - Checkpoint time: `2026-08-26T15:40:00+05:30` (0:15 cumulative active time)

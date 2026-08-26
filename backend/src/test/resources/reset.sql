@@ -1,3 +1,4 @@
+delete from workflow_freezes;
 delete from outbox_messages;
 delete from audit_events;
 delete from retry_attempts;

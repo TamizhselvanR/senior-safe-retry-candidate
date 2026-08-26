@@ -24,4 +24,9 @@ public class RetryConflictException extends AssignmentException {
         return new RetryConflictException(
                 "IDEMPOTENCY_KEY_REUSED", "Idempotency key was already used for a different request");
     }
+
+    public static RetryConflictException workflowFrozen() {
+        return new RetryConflictException(
+                "WORKFLOW_FROZEN", "Workflow is frozen and cannot accept new retries");
+    }
 }

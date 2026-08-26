@@ -13,6 +13,11 @@ public interface TaskRepository extends JpaRepository<TaskEntity, String> {
 
     Optional<TaskEntity> findByIdAndTenantId(String id, String tenantId);
 
+    boolean existsByTenantIdAndWorkflowId(String tenantId, String workflowId);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<TaskEntity> findByIdAndTenantIdAndWorkflowId(String id, String tenantId, String workflowId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    List<TaskEntity> findByTenantIdAndWorkflowId(String tenantId, String workflowId);
 }

@@ -12,6 +12,7 @@ import com.complyance.assignment.retry.domain.TaskEntity;
 import com.complyance.assignment.retry.domain.TaskNotFoundException;
 import com.complyance.assignment.retry.domain.TaskRepository;
 import com.complyance.assignment.retry.domain.TaskStatus;
+import com.complyance.assignment.retry.domain.WorkflowFreezeRepository;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -33,6 +34,7 @@ public class RetryService {
     private final RetryAttemptRepository retryAttemptRepository;
     private final AuditEventRepository auditEventRepository;
     private final OutboxMessageRepository outboxMessageRepository;
+    private final WorkflowFreezeRepository workflowFreezeRepository;
     private final RetryFailureInjector retryFailureInjector;
 
     public RetryService(
@@ -40,11 +42,13 @@ public class RetryService {
             RetryAttemptRepository retryAttemptRepository,
             AuditEventRepository auditEventRepository,
             OutboxMessageRepository outboxMessageRepository,
+            WorkflowFreezeRepository workflowFreezeRepository,
             RetryFailureInjector retryFailureInjector) {
         this.taskRepository = taskRepository;
         this.retryAttemptRepository = retryAttemptRepository;
         this.auditEventRepository = auditEventRepository;
         this.outboxMessageRepository = outboxMessageRepository;
+        this.workflowFreezeRepository = workflowFreezeRepository;
         this.retryFailureInjector = retryFailureInjector;
     }
 
@@ -64,6 +68,11 @@ public class RetryService {
         TaskEntity task = taskRepository
                 .findByIdAndTenantIdAndWorkflowId(command.taskId(), command.tenantId(), command.workflowId())
                 .orElseThrow(TaskNotFoundException::new);
+
+        // Check if the workflow has been frozen in emergency stop mode
+        if (workflowFreezeRepository.existsByTenantIdAndWorkflowId(command.tenantId(), command.workflowId())) {
+            throw RetryConflictException.workflowFrozen();
+        }
 
         Optional<RetryAttemptEntity> existingAttempt =
                 retryAttemptRepository.findByTenantIdAndIdempotencyKey(command.tenantId(), command.idempotencyKey());

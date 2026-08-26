@@ -35,8 +35,26 @@ export async function fetchTasks(authToken) {
   return Array.isArray(payload.tasks) ? payload.tasks.map(normalizeTask) : []
 }
 
-export async function requestRetry(_request) {
-  // TODO(candidate): implement the published retry endpoint contract here.
-  // The backend, not this browser client, remains authoritative for tenant identity.
-  throw new Error('Retry API integration has not been implemented yet.')
+export async function requestRetry({ authToken, task, idempotencyKey }) {
+  const response = await fetch(
+    `/api/workflows/${encodeURIComponent(task.workflowId)}/tasks/${encodeURIComponent(task.taskId)}/retry`,
+    {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${authToken}`,
+        'Idempotency-Key': idempotencyKey
+      },
+      body: JSON.stringify({ expectedVersion: task.version })
+    }
+  )
+
+  const payload = await response.json()
+
+  if (!response.ok) {
+    throw new ApiError(payload.message ?? 'The task retry request failed.', response.status)
+  }
+
+  return normalizeTask(payload)
 }

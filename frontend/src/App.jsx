@@ -16,6 +16,14 @@ function humanize(value) {
     .join(' ')
 }
 
+// Generates 1 unique Idempotency-Key per retry click
+function generateIdempotencyKey() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `retry-key-${crypto.randomUUID()}`
+  }
+  return `retry-key-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`
+}
+
 function StateBadge({ state }) {
   return <span className={`state-badge state-${state.toLowerCase()}`}>{humanize(state)}</span>
 }
@@ -77,7 +85,7 @@ function ErrorNotice({ error, onRetry }) {
   )
 }
 
-function TaskDetail({ task, onRetry }) {
+function TaskDetail({ task, onRetry, isPending }) {
   if (!task) {
     return (
       <section className="detail-panel detail-panel--empty" aria-label="Task details">
@@ -124,8 +132,14 @@ function TaskDetail({ task, onRetry }) {
 
       <div className="detail-panel__actions">
         {task.state === RETRYABLE_STATE ? (
-          <button type="button" className="button button--primary" onClick={() => onRetry(task)}>
-            Retry task
+          // Disables button and updates text during pending in-flight requests to block double-clicks
+          <button
+            type="button"
+            className="button button--primary"
+            onClick={() => onRetry(task)}
+            disabled={isPending}
+          >
+            {isPending ? 'Queuing retry…' : 'Retry task'}
           </button>
         ) : (
           <p className="muted">This task is not eligible for retry.</p>
@@ -141,6 +155,8 @@ export default function App({ authToken = import.meta.env.VITE_DEMO_AUTH_TOKEN ?
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(null)
   const [retryError, setRetryError] = useState(null)
+  // Tracks in-flight retry request task key to lock UI and disable duplicate clicks
+  const [pendingKey, setPendingKey] = useState(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -148,7 +164,15 @@ export default function App({ authToken = import.meta.env.VITE_DEMO_AUTH_TOKEN ?
 
     try {
       const loadedTasks = await fetchTasks(authToken)
-      setTasks(loadedTasks)
+      // Stale Response Guard: Retains local task version if background list fetch returns older version
+      setTasks((prev) => {
+        if (prev.length === 0) return loadedTasks
+        const prevMap = new Map(prev.map((t) => [taskKey(t), t]))
+        return loadedTasks.map((t) => {
+          const existing = prevMap.get(taskKey(t))
+          return existing && existing.version > t.version ? existing : t
+        })
+      })
       setSelectedKey((current) => {
         if (loadedTasks.some((task) => taskKey(task) === current)) return current
         return loadedTasks.length > 0 ? taskKey(loadedTasks[0]) : null
@@ -170,22 +194,34 @@ export default function App({ authToken = import.meta.env.VITE_DEMO_AUTH_TOKEN ?
   )
 
   const retry = useCallback(async (task) => {
+    const key = taskKey(task)
+    // Early guard: Blocks duplicate clicks while request is in-flight
+    if (pendingKey === key) return
+
     setRetryError(null)
+    setPendingKey(key) // Lock UI button state
 
     try {
-      await requestRetry({ authToken, task })
-
-      // TODO(candidate): update the task without reloading after a 200 or 202 response.
-      // Preserve the newest task version when requests complete out of order.
+      const idempotencyKey = generateIdempotencyKey()
+      const updatedTask = await requestRetry({ authToken, task, idempotencyKey })
+      // In-place state update: Replaces task with server response, protecting against stale out-of-order responses
+      setTasks((prevTasks) =>
+        prevTasks.map((t) => {
+          if (taskKey(t) === key) {
+            return t.version >= updatedTask.version ? t : updatedTask
+          }
+          return t
+        })
+      )
     } catch (error) {
-      // TODO(candidate): distinguish a 409 conflict from other request failures.
       setRetryError(error instanceof Error ? error : new Error('The retry could not be queued.'))
+    } finally {
+      setPendingKey(null)
     }
-
-    // TODO(candidate): expose pending state and prevent duplicate clicks while awaiting the request.
-  }, [authToken])
+  }, [authToken, pendingKey])
 
   const failedCount = tasks.filter((task) => task.state === RETRYABLE_STATE).length
+  const isSelectedPending = selectedTask ? pendingKey === taskKey(selectedTask) : false
 
   return (
     <div className="app-shell">
@@ -241,7 +277,7 @@ export default function App({ authToken = import.meta.env.VITE_DEMO_AUTH_TOKEN ?
               </div>
               <TaskList tasks={tasks} selectedKey={selectedKey} onSelect={setSelectedKey} />
             </section>
-            <TaskDetail task={selectedTask} onRetry={retry} />
+            <TaskDetail task={selectedTask} onRetry={retry} isPending={isSelectedPending} />
           </div>
         )}
       </main>

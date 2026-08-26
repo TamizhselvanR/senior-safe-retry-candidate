@@ -10,7 +10,6 @@ import com.complyance.assignment.SafeRetryApplication;
 import com.complyance.assignment.retry.application.RetryFailureInjector;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -23,8 +22,7 @@ import org.springframework.test.context.jdbc.Sql;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
- * Published behavioral contracts. Enable these tests progressively while implementing the assignment.
- * They intentionally do not prescribe a locking strategy or transaction design.
+ * Published behavioral contracts.
  */
 @SpringBootTest(classes = SafeRetryApplication.class)
 @AutoConfigureMockMvc
@@ -40,7 +38,6 @@ class PublicContractTest {
     @MockitoBean private RetryFailureInjector failureInjector;
 
     @Test
-    @Disabled("Contract: enable when a retry can be accepted atomically")
     void acceptedRetryReturns202AndCreatesOneAttemptAuditAndOutboxRow() throws Exception {
         retry(ALPHA_AUTH, "task-alpha-retryable", "accepted-contract-key", 0)
                 .andExpect(status().isAccepted())
@@ -53,7 +50,6 @@ class PublicContractTest {
     }
 
     @Test
-    @Disabled("Contract: enable when exact idempotent replay is implemented")
     void sameKeyAndRequestReturns200WithOriginalAttemptAndNoDuplicateRows() throws Exception {
         var first = retry(ALPHA_AUTH, "task-alpha-retryable", "replay-contract-key", 0)
                 .andExpect(status().isAccepted())
@@ -69,7 +65,6 @@ class PublicContractTest {
     }
 
     @Test
-    @Disabled("Contract: enable when idempotency-key payload binding is implemented")
     void sameKeyWithDifferentExpectedVersionReturns409() throws Exception {
         retry(ALPHA_AUTH, "task-alpha-retryable", "mismatch-contract-key", 0)
                 .andExpect(status().isAccepted());
@@ -79,7 +74,6 @@ class PublicContractTest {
     }
 
     @Test
-    @Disabled("Contract: enable when optimistic version validation is implemented")
     void staleExpectedVersionReturns409WithoutWrites() throws Exception {
         retry(ALPHA_AUTH, "task-alpha-retryable", "stale-contract-key", 9)
                 .andExpect(status().isConflict())
@@ -88,7 +82,6 @@ class PublicContractTest {
     }
 
     @Test
-    @Disabled("Contract: enable when retry lookup is tenant scoped")
     void crossTenantRetryIsConcealedAs404WithoutWrites() throws Exception {
         retry(BETA_AUTH, "task-alpha-retryable", "tenant-contract-key", 0)
                 .andExpect(status().isNotFound())
@@ -97,13 +90,12 @@ class PublicContractTest {
     }
 
     @Test
-    @Disabled("Contract: enable after adding a deterministic concurrent-request test")
     void concurrentSameKeyRequestsProduceOneAttemptAndOneReplay() throws Exception {
         var ready = new CountDownLatch(2);
         var start = new CountDownLatch(1);
         try (var pool = Executors.newFixedThreadPool(2)) {
-            var first = pool.submit(() -> concurrentRetry(ready, start));
-            var second = pool.submit(() -> concurrentRetry(ready, start));
+            var first = pool.submit(() -> concurrentRetry(ready, start, "concurrent-contract-key"));
+            var second = pool.submit(() -> concurrentRetry(ready, start, "concurrent-contract-key"));
             ready.await();
             start.countDown();
 
@@ -118,7 +110,24 @@ class PublicContractTest {
     }
 
     @Test
-    @Disabled("Contract: enable when all four writes share one transaction")
+    void concurrentDifferentKeyRequestsProduceOneAcceptedAndOneConflict() throws Exception {
+        var ready = new CountDownLatch(2);
+        var start = new CountDownLatch(1);
+        try (var pool = Executors.newFixedThreadPool(2)) {
+            var first = pool.submit(() -> concurrentRetry(ready, start, "diff-key-1"));
+            var second = pool.submit(() -> concurrentRetry(ready, start, "diff-key-2"));
+            ready.await();
+            start.countDown();
+
+            assertThat(first.get().getResponse().getStatus()).isIn(202, 409);
+            assertThat(second.get().getResponse().getStatus()).isIn(202, 409);
+            assertThat(first.get().getResponse().getStatus())
+                    .isNotEqualTo(second.get().getResponse().getStatus());
+        }
+        assertAtomicRowCounts(1);
+    }
+
+    @Test
     void failureAfterOutboxInsertionRollsBackTheEntireChangeSet() throws Exception {
         doThrow(new IllegalStateException("injected failure"))
                 .when(failureInjector)
@@ -146,10 +155,10 @@ class PublicContractTest {
     }
 
     private org.springframework.test.web.servlet.MvcResult concurrentRetry(
-            CountDownLatch ready, CountDownLatch start) throws Exception {
+            CountDownLatch ready, CountDownLatch start, String key) throws Exception {
         ready.countDown();
         start.await();
-        return retry(ALPHA_AUTH, "task-alpha-retryable", "concurrent-contract-key", 0).andReturn();
+        return retry(ALPHA_AUTH, "task-alpha-retryable", key, 0).andReturn();
     }
 
     private void assertAtomicRowCounts(long expected) {

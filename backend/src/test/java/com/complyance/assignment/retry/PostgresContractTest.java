@@ -26,7 +26,6 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
  * Real-PostgreSQL public contract. Enable after implementing safe retry.
  * Docker must be available; no sleep-based coordination is used.
  */
-@Disabled("Enable after implementing the safe-retry transaction")
 @SpringBootTest(classes = SafeRetryApplication.class)
 @Testcontainers(disabledWithoutDocker = true)
 @Sql(scripts = "/reset.sql", executionPhase = Sql.ExecutionPhase.BEFORE_TEST_METHOD)
